@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blenko SKU Generator
 // @namespace    https://blenkoglass.com/
-// @version      3.0.0
+// @version      3.0.1
 // @description  Automatically generates SKUs for Blenko Glass products in Shopify (new and existing products)
 // @author       David Wertz, VP Manufacturing
 // @match        https://admin.shopify.com/*
@@ -27,7 +27,7 @@
     function isExistingProductPage() {
         const url = window.location.href;
         const path = window.location.pathname;
-
+        
         // Debug logging
         console.log('Blenko SKU Generator Debug - URL check:', {
             fullUrl: url,
@@ -38,9 +38,9 @@
             includesMetafields: path.includes('/metafields'),
             pathParts: path.split('/').length
         });
-
-        return path.includes('/store/blenko-glass/products/') &&
-               !path.includes('/new') &&
+        
+        return path.includes('/store/blenko-glass/products/') && 
+               !path.includes('/new') && 
                !path.includes('/inventory') &&
                !path.includes('/metafields') &&
                !path.includes('/variants/') &&
@@ -106,7 +106,7 @@
     // Find elements
     function findTitleInput() {
         console.log('Blenko SKU Generator: Looking for title input');
-
+        
         const selectors = [
             'input[name="title"]',
             'input[placeholder*="Short sleeve t-shirt"]',
@@ -129,14 +129,14 @@
         console.log('Blenko SKU Generator: Trying fallback title search');
         const inputs = document.querySelectorAll('input[type="text"]');
         for (const input of inputs) {
-            if (input.name === 'title' ||
+            if (input.name === 'title' || 
                 input.placeholder?.toLowerCase().includes('title') ||
                 input.getAttribute('aria-labelledby')?.toLowerCase().includes('title')) {
                 console.log('Blenko SKU Generator: Found title input via fallback');
                 return input;
             }
         }
-
+        
         console.log('Blenko SKU Generator: No title input found');
         return null;
     }
@@ -155,7 +155,7 @@
 
     function findSKUInput() {
         console.log('Blenko SKU Generator: Looking for SKU input');
-
+        
         const selectors = [
             'input[name="sku"]',
             '#InventoryCardSku',
@@ -175,14 +175,14 @@
         console.log('Blenko SKU Generator: Trying fallback SKU search');
         const inputs = document.querySelectorAll('input[type="text"]');
         for (const input of inputs) {
-            if (input.name === 'sku' ||
+            if (input.name === 'sku' || 
                 input.id?.toLowerCase().includes('sku') ||
                 input.getAttribute('aria-labelledby')?.toLowerCase().includes('sku')) {
                 console.log('Blenko SKU Generator: Found SKU input via fallback');
                 return input;
             }
         }
-
+        
         console.log('Blenko SKU Generator: No SKU input found');
         return null;
     }
@@ -202,12 +202,34 @@
     // Check if SKU is missing
     function isSKUMissing() {
         console.log('🔍 Checking if SKU is missing...');
-
+        
         if (isNewProductPage()) {
-            // For new products, check if SKU checkbox is not checked
+            // For new products, check BOTH conditions:
+            // 1. SKU checkbox is not checked, OR
+            // 2. SKU checkbox is checked but SKU field is empty
             const skuCheckbox = findSKUCheckbox();
-            const missing = skuCheckbox && !skuCheckbox.checked;
-            console.log('🔍 New product SKU check:', { hasCheckbox: !!skuCheckbox, checked: skuCheckbox?.checked, missing });
+            const skuInput = findSKUInput();
+            
+            let missing = false;
+            
+            if (skuCheckbox && !skuCheckbox.checked) {
+                // Case 1: Checkbox not checked
+                missing = true;
+                console.log('🔍 New product SKU check: Checkbox not checked');
+            } else if (skuCheckbox && skuCheckbox.checked && skuInput && (!skuInput.value || skuInput.value.trim() === '')) {
+                // Case 2: Checkbox checked but SKU field empty
+                missing = true;
+                console.log('🔍 New product SKU check: Checkbox checked but SKU field empty');
+            }
+            
+            console.log('🔍 New product SKU check:', { 
+                hasCheckbox: !!skuCheckbox, 
+                checked: skuCheckbox?.checked, 
+                hasInput: !!skuInput,
+                inputValue: skuInput?.value,
+                missing 
+            });
+            
             return missing;
         } else if (isExistingProductPage()) {
             // For existing products, check if SKU field is empty
@@ -257,7 +279,7 @@
         if (!isProductPage()) return;
 
         const titleInput = findTitleInput();
-
+        
         console.log('Blenko SKU Generator: Save clicked', {
             titleFound: !!titleInput,
             titleValue: titleInput?.value,
@@ -281,10 +303,21 @@
         let skuInput = null;
 
         if (isNewProductPage()) {
-            // For new products, check if SKU checkbox is not checked
+            // For new products, handle both scenarios:
+            // 1. SKU checkbox is not checked
+            // 2. SKU checkbox is checked but SKU field is empty
             skuCheckbox = findSKUCheckbox();
-            needsSKU = skuCheckbox && !skuCheckbox.checked;
-            console.log('New product - SKU checkbox checked:', skuCheckbox?.checked);
+            skuInput = findSKUInput();
+            
+            if (skuCheckbox && !skuCheckbox.checked) {
+                // Scenario 1: Checkbox not checked
+                needsSKU = true;
+                console.log('New product - SKU checkbox not checked');
+            } else if (skuCheckbox && skuCheckbox.checked && skuInput && (!skuInput.value || skuInput.value.trim() === '')) {
+                // Scenario 2: Checkbox checked but SKU field empty
+                needsSKU = true;
+                console.log('New product - SKU checkbox checked but field empty');
+            }
         } else if (isExistingProductPage()) {
             // For existing products, check if SKU field is empty
             skuInput = findSKUInput();
@@ -314,15 +347,15 @@
 
             if (shouldGenerate) {
                 try {
-                    if (isNewProductPage() && skuCheckbox) {
-                        // Check the SKU checkbox for new products
+                    if (isNewProductPage() && skuCheckbox && !skuCheckbox.checked) {
+                        // Only check the SKU checkbox if it's not already checked
                         skuCheckbox.checked = true;
                         skuCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
                         skuCheckbox.dispatchEvent(new Event('click', { bubbles: true }));
 
                         // Wait for the SKU field to appear
                         await new Promise(resolve => setTimeout(resolve, 500));
-
+                        
                         // Find the SKU input field after checking the box
                         skuInput = findSKUInput();
                     }
@@ -410,16 +443,19 @@
     function initialize() {
         // Only run on product pages
         if (!isProductPage()) {
+            console.log('🔍 Not on a product page, skipping initialization');
             return;
         }
 
-        console.log('Blenko SKU Generator: Setting up on product page', {
+        console.log('🚀 Blenko SKU Generator: Setting up on product page', {
             isNew: isNewProductPage(),
-            isExisting: isExistingProductPage()
+            isExisting: isExistingProductPage(),
+            url: window.location.href
         });
 
         // Show initial prompt for existing products
         if (isExistingProductPage()) {
+            console.log('🔍 Scheduling initial prompt check...');
             showInitialPromptIfNeeded();
         }
 
